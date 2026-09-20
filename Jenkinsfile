@@ -3,31 +3,32 @@ pipeline {
     agent any
 
     environment {
+        // ==============================
         // Docker Hub
+        // ==============================
         DOCKER_IMAGE = "tengzzz/jenkins"
 
-        // Application
-        CONTAINER_NAME = "jenkins-app"
-        APP_PORT = "8080"
-
+        // ==============================
         // AWS EC2
+        // ==============================
         AWS_USER = "ec2-user"
         AWS_HOST = "16.176.27.153"
-        AWS_PORT = "22"
 
-        // Jenkins build number
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        // ==============================
+        // Docker Container
+        // ==============================
+        CONTAINER_NAME = "jenkins-app"
+        APP_PORT = "8080"
     }
 
     stages {
 
         // ==========================================
-        // 1. CHECKOUT
+        // 1. CHECKOUT CODE
         // ==========================================
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
                 echo "Checking out source code..."
-
                 checkout scm
             }
         }
@@ -39,40 +40,26 @@ pipeline {
             steps {
                 echo "Building Docker image..."
 
-                sh '''
+                sh """
                     docker build \
-                        -t ${DOCKER_IMAGE}:${IMAGE_TAG} \
+                        -t ${DOCKER_IMAGE}:${BUILD_NUMBER} \
                         -t ${DOCKER_IMAGE}:latest \
                         .
-                '''
+                """
             }
         }
 
         // ==========================================
-        // 3. TEST IMAGE
+        // 3. PUSH TO DOCKER HUB
         // ==========================================
-        stage('Test Docker Image') {
+        stage('Push Image') {
             steps {
-                echo "Checking Docker image..."
 
-                sh '''
-                    docker image inspect ${DOCKER_IMAGE}:${IMAGE_TAG}
-
-                    echo "Image created successfully:"
-                    docker images ${DOCKER_IMAGE}
-                '''
-            }
-        }
-
-        // ==========================================
-        // 4. LOGIN DOCKER HUB
-        // ==========================================
-        stage('Docker Hub Login') {
-            steps {
+                echo "Logging into Docker Hub..."
 
                 withCredentials([
                     usernamePassword(
-                        credentialsId: 'dockerhub',
+                        credentialsId: 'docker-hub-id',
                         usernameVariable: 'DOCKER_USERNAME',
                         passwordVariable: 'DOCKER_PASSWORD'
                     )
@@ -83,47 +70,35 @@ pipeline {
                             -u "$DOCKER_USERNAME" \
                             --password-stdin
                     '''
+
+                    echo "Pushing Docker image..."
+
+                    sh """
+                        docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                        docker push ${DOCKER_IMAGE}:latest
+                    """
                 }
             }
         }
 
         // ==========================================
-        // 5. PUSH DOCKER IMAGE
-        // ==========================================
-        stage('Push Docker Image') {
-            steps {
-
-                echo "Pushing ${DOCKER_IMAGE}:${IMAGE_TAG}"
-
-                sh '''
-                    docker push ${DOCKER_IMAGE}:${IMAGE_TAG}
-                    docker push ${DOCKER_IMAGE}:latest
-                '''
-            }
-        }
-
-        // ==========================================
-        // 6. DEPLOY AWS EC2
+        // 4. DEPLOY TO AWS EC2
         // ==========================================
         stage('Deploy to AWS') {
             steps {
 
+                echo "Deploying to AWS EC2..."
+
                 sshagent(credentials: ['aws-ec2']) {
 
-                    sh '''
-                        echo "Connecting to AWS EC2..."
-
-                        ssh \
-                            -o StrictHostKeyChecking=no \
-                            -p ${AWS_PORT} \
-                            ${AWS_USER}@${AWS_HOST} << 'REMOTE_COMMANDS'
-
-                            set -e
-
+                    sh """
+                        ssh -o StrictHostKeyChecking=no \
+                            ${AWS_USER}@${AWS_HOST} '
+                            
                             echo "Connected to AWS EC2"
 
-                            echo "Pulling latest image..."
-                            docker pull ${DOCKER_IMAGE}:latest
+                            echo "Pulling Docker image..."
+                            docker pull ${DOCKER_IMAGE}:${BUILD_NUMBER}
 
                             echo "Stopping old container..."
                             docker stop ${CONTAINER_NAME} || true
@@ -132,82 +107,79 @@ pipeline {
                             docker rm ${CONTAINER_NAME} || true
 
                             echo "Starting new container..."
-
                             docker run -d \
                                 --name ${CONTAINER_NAME} \
                                 --restart unless-stopped \
                                 -p 80:${APP_PORT} \
-                                ${DOCKER_IMAGE}:latest
+                                ${DOCKER_IMAGE}:${BUILD_NUMBER}
 
-                            echo "Container started!"
+                            echo "Deployment complete!"
 
-                            docker ps --filter name=${CONTAINER_NAME}
-
-                        REMOTE_COMMANDS
-                    '''
+                            echo "Running containers:"
+                            docker ps
+                        '
+                    """
                 }
             }
         }
 
         // ==========================================
-        // 7. VERIFY AWS DEPLOYMENT
+        // 5. VERIFY
         // ==========================================
         stage('Verify Deployment') {
             steps {
 
+                echo "Verifying AWS deployment..."
+
                 sshagent(credentials: ['aws-ec2']) {
 
-                    sh '''
-                        echo "Verifying deployment..."
-
-                        ssh \
-                            -o StrictHostKeyChecking=no \
-                            -p ${AWS_PORT} \
+                    sh """
+                        ssh -o StrictHostKeyChecking=no \
                             ${AWS_USER}@${AWS_HOST} \
                             "docker ps --filter name=${CONTAINER_NAME}"
-                    '''
+                    """
                 }
             }
         }
     }
 
     // ==========================================
-    // POST
+    // POST ACTIONS
     // ==========================================
     post {
 
         success {
-            echo '''
+            echo """
 ==========================================
-       DEPLOYMENT SUCCESSFUL 🚀
+       DEPLOYMENT SUCCESSFUL
 ==========================================
 
 Docker Image:
-tengzzz/jenkins:latest
+${DOCKER_IMAGE}:${BUILD_NUMBER}
 
 AWS EC2:
-16.176.27.153
+${AWS_HOST}
 
 Application:
-http://16.176.27.153
+http://${AWS_HOST}
 
 Port:
-80 → 8080
+80 -> ${APP_PORT}
 
 ==========================================
-'''
+"""
         }
 
         failure {
-            echo '''
+            echo """
 ==========================================
-       DEPLOYMENT FAILED ❌
+       DEPLOYMENT FAILED
 ==========================================
 
-Check the Jenkins Console Output.
+Check Jenkins Console Output.
 
 ==========================================
-'''
+"""
         }
 
         always {
