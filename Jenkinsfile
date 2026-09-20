@@ -1,31 +1,16 @@
-```groovy
 pipeline {
     agent any
 
     environment {
-        // ==============================
-        // Docker Hub
-        // ==============================
         DOCKER_IMAGE = "tengzzz/jenkins"
-
-        // ==============================
-        // AWS EC2
-        // ==============================
         AWS_USER = "ec2-user"
         AWS_HOST = "16.176.27.153"
-
-        // ==============================
-        // Docker Container
-        // ==============================
         CONTAINER_NAME = "jenkins-app"
         APP_PORT = "8080"
     }
 
     stages {
 
-        // ==========================================
-        // 1. CHECKOUT CODE
-        // ==========================================
         stage('Checkout Code') {
             steps {
                 echo "Checking out source code..."
@@ -33,9 +18,6 @@ pipeline {
             }
         }
 
-        // ==========================================
-        // 2. BUILD DOCKER IMAGE
-        // ==========================================
         stage('Build Docker Image') {
             steps {
                 echo "Building Docker image..."
@@ -49,12 +31,8 @@ pipeline {
             }
         }
 
-        // ==========================================
-        // 3. PUSH TO DOCKER HUB
-        // ==========================================
         stage('Push Image') {
             steps {
-
                 echo "Logging into Docker Hub..."
 
                 withCredentials([
@@ -81,55 +59,44 @@ pipeline {
             }
         }
 
-        // ==========================================
-        // 4. DEPLOY TO AWS EC2
-        // ==========================================
         stage('Deploy to AWS') {
             steps {
-
                 echo "Deploying to AWS EC2..."
 
                 sshagent(credentials: ['aws-ec2']) {
 
                     sh """
                         ssh -o StrictHostKeyChecking=no \
-                            ${AWS_USER}@${AWS_HOST} '
-                            
-                            echo "Connected to AWS EC2"
+                            ${AWS_USER}@${AWS_HOST} "
+                                echo 'Connected to AWS EC2';
 
-                            echo "Pulling Docker image..."
-                            docker pull ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                                echo 'Pulling Docker image...';
+                                docker pull ${DOCKER_IMAGE}:${BUILD_NUMBER};
 
-                            echo "Stopping old container..."
-                            docker stop ${CONTAINER_NAME} || true
+                                echo 'Stopping old container...';
+                                docker stop ${CONTAINER_NAME} || true;
 
-                            echo "Removing old container..."
-                            docker rm ${CONTAINER_NAME} || true
+                                echo 'Removing old container...';
+                                docker rm ${CONTAINER_NAME} || true;
 
-                            echo "Starting new container..."
-                            docker run -d \
-                                --name ${CONTAINER_NAME} \
-                                --restart unless-stopped \
-                                -p 80:${APP_PORT} \
-                                ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                                echo 'Starting new container...';
+                                docker run -d \
+                                    --name ${CONTAINER_NAME} \
+                                    --restart unless-stopped \
+                                    -p 80:${APP_PORT} \
+                                    ${DOCKER_IMAGE}:${BUILD_NUMBER};
 
-                            echo "Deployment complete!"
-
-                            echo "Running containers:"
-                            docker ps
-                        '
+                                echo 'Deployment complete!';
+                                docker ps;
+                            "
                     """
                 }
             }
         }
 
-        // ==========================================
-        // 5. VERIFY
-        // ==========================================
         stage('Verify Deployment') {
             steps {
-
-                echo "Verifying AWS deployment..."
+                echo "Verifying deployment..."
 
                 sshagent(credentials: ['aws-ec2']) {
 
@@ -143,16 +110,13 @@ pipeline {
         }
     }
 
-    // ==========================================
-    // POST ACTIONS
-    // ==========================================
     post {
 
         success {
             echo """
-==========================================
-       DEPLOYMENT SUCCESSFUL
-==========================================
+========================================
+DEPLOYMENT SUCCESSFUL
+========================================
 
 Docker Image:
 ${DOCKER_IMAGE}:${BUILD_NUMBER}
@@ -166,19 +130,19 @@ http://${AWS_HOST}
 Port:
 80 -> ${APP_PORT}
 
-==========================================
+========================================
 """
         }
 
         failure {
             echo """
-==========================================
-       DEPLOYMENT FAILED
-==========================================
+========================================
+DEPLOYMENT FAILED
+========================================
 
 Check Jenkins Console Output.
 
-==========================================
+========================================
 """
         }
 
@@ -187,4 +151,3 @@ Check Jenkins Console Output.
         }
     }
 }
-```
