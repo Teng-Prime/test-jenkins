@@ -2,12 +2,14 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = "tengzzz/jenkins"
-        AWS_USER = "ec2-user"
-        AWS_HOST = "16.176.27.153"
-        CONTAINER_NAME = "jenkins-app"
-        APP_PORT = "8080"
-    }
+    PATH = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+    DOCKER_IMAGE = "tengzzz/jenkins"
+    AWS_USER = "ec2-user"
+    AWS_HOST = "16.176.27.153"
+    CONTAINER_NAME = "jenkins-app"
+    APP_PORT = "8080"
+}
 
     stages {
 
