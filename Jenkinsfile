@@ -110,44 +110,4 @@ pipeline {
         }
     }
 
-    post {
-
-        success {
-            echo """
-========================================
-DEPLOYMENT SUCCESSFUL
-========================================
-
-Docker Image:
-${DOCKER_IMAGE}:${BUILD_NUMBER}
-
-AWS EC2:
-${AWS_HOST}
-
-Application:
-http://${AWS_HOST}
-
-Port:
-80 -> ${APP_PORT}
-
-========================================
-"""
-        }
-
-        failure {
-            echo """
-========================================
-DEPLOYMENT FAILED
-========================================
-
-Check Jenkins Console Output.
-
-========================================
-"""
-        }
-
-        always {
-            sh 'docker logout || true'
-        }
-    }
 }
