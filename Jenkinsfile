@@ -2,24 +2,35 @@ pipeline {
     agent any
 
     environment {
-        // Make sure Jenkins can find Docker
+        // ========================================
+        // JENKINS / DOCKER
+        // ========================================
         PATH = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-        // Docker Hub
+        // ========================================
+        // DOCKER HUB
+        // ========================================
         DOCKER_IMAGE = "tengzzz/jenkins"
 
+        // ========================================
         // AWS EC2
+        // ========================================
+        AWS_USER = "ubuntu"
         AWS_HOST = "16.176.27.153"
+
+        // ========================================
+        // DOCKER CONTAINER
+        // ========================================
         CONTAINER_NAME = "jenkins-app"
 
-        // Nginx inside Docker container
+        // Nginx listens on port 80
         APP_PORT = "80"
     }
 
     stages {
 
         // ========================================
-        // 1. CHECKOUT
+        // 1. CHECKOUT CODE
         // ========================================
         stage('Checkout Code') {
             steps {
@@ -55,7 +66,7 @@ pipeline {
                     echo "Docker version:"
                     docker --version
 
-                    echo "Docker status:"
+                    echo "Docker containers:"
                     docker ps
                 '''
             }
@@ -77,7 +88,9 @@ pipeline {
                         -t ${DOCKER_IMAGE}:latest \
                         .
 
-                    echo "Docker image built successfully."
+                    echo "========================================"
+                    echo "Docker image built successfully"
+                    echo "========================================"
 
                     docker images ${DOCKER_IMAGE}
                 """
@@ -86,7 +99,7 @@ pipeline {
 
 
         // ========================================
-        // 4. LOGIN + PUSH TO DOCKER HUB
+        // 4. PUSH TO DOCKER HUB
         // ========================================
         stage('Push Image to Docker Hub') {
             steps {
@@ -110,7 +123,7 @@ pipeline {
                             --password-stdin
                     '''
 
-                    echo "Pushing build image..."
+                    echo "Pushing build number image..."
 
                     sh """
                         docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}
@@ -122,14 +135,16 @@ pipeline {
                         docker push ${DOCKER_IMAGE}:latest
                     """
 
-                    echo "Docker image pushed successfully."
+                    echo "========================================"
+                    echo "Docker images pushed successfully"
+                    echo "========================================"
                 }
             }
         }
 
 
         // ========================================
-        // 5. TEST SSH CONNECTION TO AWS
+        // 5. TEST AWS SSH
         // ========================================
         stage('Test AWS SSH') {
             steps {
@@ -149,6 +164,8 @@ pipeline {
                         chmod 600 "$SSH_KEY"
 
                         echo "Connecting to AWS EC2..."
+                        echo "Host: $AWS_HOST"
+                        echo "User: $SSH_USER"
 
                         ssh \
                             -o StrictHostKeyChecking=no \
@@ -190,34 +207,40 @@ pipeline {
                             -i "\$SSH_KEY" \
                             "\$SSH_USER@${AWS_HOST}" "
                             
-                                echo '----------------------------------------';
-                                echo 'Connected to AWS EC2';
-                                echo '----------------------------------------';
+                                echo '========================================';
+                                echo 'CONNECTED TO AWS EC2';
+                                echo '========================================';
 
-                                echo 'Docker version:';
+                                echo 'Current user:';
+                                whoami;
+
+                                echo '========================================';
+                                echo 'DOCKER VERSION';
+                                echo '========================================';
+
                                 docker --version;
 
-                                echo '----------------------------------------';
-                                echo 'Pulling Docker image...';
-                                echo '----------------------------------------';
+                                echo '========================================';
+                                echo 'PULLING DOCKER IMAGE';
+                                echo '========================================';
 
                                 docker pull ${DOCKER_IMAGE}:${BUILD_NUMBER};
 
-                                echo '----------------------------------------';
-                                echo 'Stopping old container...';
-                                echo '----------------------------------------';
+                                echo '========================================';
+                                echo 'STOPPING OLD CONTAINER';
+                                echo '========================================';
 
                                 docker stop ${CONTAINER_NAME} || true;
 
-                                echo '----------------------------------------';
-                                echo 'Removing old container...';
-                                echo '----------------------------------------';
+                                echo '========================================';
+                                echo 'REMOVING OLD CONTAINER';
+                                echo '========================================';
 
                                 docker rm ${CONTAINER_NAME} || true;
 
-                                echo '----------------------------------------';
-                                echo 'Starting new container...';
-                                echo '----------------------------------------';
+                                echo '========================================';
+                                echo 'STARTING NEW CONTAINER';
+                                echo '========================================';
 
                                 docker run -d \
                                     --name ${CONTAINER_NAME} \
@@ -225,11 +248,11 @@ pipeline {
                                     -p 80:${APP_PORT} \
                                     ${DOCKER_IMAGE}:${BUILD_NUMBER};
 
-                                echo '----------------------------------------';
-                                echo 'Deployment complete!';
-                                echo '----------------------------------------';
+                                echo '========================================';
+                                echo 'DEPLOYMENT COMPLETE';
+                                echo '========================================';
 
-                                echo 'Running containers:';
+                                echo 'RUNNING CONTAINERS:';
 
                                 docker ps;
                             "
@@ -265,20 +288,22 @@ pipeline {
                             -i "\$SSH_KEY" \
                             "\$SSH_USER@${AWS_HOST}" "
                             
-                                echo 'Checking container...';
+                                echo '========================================';
+                                echo 'CONTAINER STATUS';
+                                echo '========================================';
 
                                 docker ps \
                                     --filter name=${CONTAINER_NAME};
 
-                                echo '----------------------------------------';
-
-                                echo 'Checking port 80...';
+                                echo '========================================';
+                                echo 'TESTING HTTP PORT 80';
+                                echo '========================================';
 
                                 curl -I http://localhost:80 || true;
 
-                                echo '----------------------------------------';
-
-                                echo 'Deployment verification completed.';
+                                echo '========================================';
+                                echo 'VERIFICATION COMPLETE';
+                                echo '========================================';
                             "
                     """
                 }
@@ -292,6 +317,9 @@ pipeline {
     // ========================================
     post {
 
+        // ========================================
+        // SUCCESS
+        // ========================================
         success {
             echo """
 ========================================
@@ -307,6 +335,9 @@ ${DOCKER_IMAGE}:latest
 AWS EC2:
 ${AWS_HOST}
 
+SSH User:
+${AWS_USER}
+
 Container:
 ${CONTAINER_NAME}
 
@@ -320,6 +351,10 @@ Port:
 """
         }
 
+
+        // ========================================
+        // FAILURE
+        // ========================================
         failure {
             echo """
 ========================================
@@ -329,6 +364,9 @@ Port:
 Build:
 ${BUILD_NUMBER}
 
+AWS:
+${AWS_HOST}
+
 Check the Jenkins Console Output
 for the exact error.
 
@@ -336,6 +374,10 @@ for the exact error.
 """
         }
 
+
+        // ========================================
+        // ALWAYS
+        // ========================================
         always {
             echo "Cleaning up Docker Hub login..."
 
